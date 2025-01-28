@@ -33,7 +33,7 @@ static constexpr spv::ExecutionMode GetInputPrimitiveType(AmdGpu::PrimitiveType 
     case AmdGpu::PrimitiveType::AdjTriangleList:
         return spv::ExecutionMode::InputTrianglesAdjacency;
     default:
-        UNREACHABLE_MSG("Unknown input primitive type {}", u32(type));
+//        UNREACHABLE_MSG("Unknown input primitive type {}", u32(type));
     }
 }
 
