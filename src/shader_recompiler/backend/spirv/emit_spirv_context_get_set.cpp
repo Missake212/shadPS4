@@ -47,19 +47,14 @@ static std::pair<Id, bool> OutputAttrComponentType(EmitContext& ctx, IR::Attribu
 }
 
 Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
-    const u32 index = ctx.binding.user_data + ctx.info.ud_mask.Index(reg);
-    const u32 half = PushData::UdRegsIndex + (index >> 2);
-    const Id ud_ptr{ctx.OpAccessChain(ctx.TypePointer(spv::StorageClass::PushConstant, ctx.U32[1]),
-                                      ctx.push_data_block, ctx.ConstU32(half),
-                                      ctx.ConstU32(index & 3))};
-    const Id ud_reg{ctx.OpLoad(ctx.U32[1], ud_ptr)};
+    const Id ud_reg{ctx.EmitFlatbufferLoad(ctx.ConstU32(static_cast<u32>(reg)))};
     ctx.Name(ud_reg, fmt::format("ud_{}", u32(reg)));
     return ud_reg;
 }
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled()) {
+    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !ctx.profile.support_bda) {
         return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
     }
     if (flatbuf_off_dw == 0) {
@@ -108,7 +103,8 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         }();
         return param.is_integer ? ctx.OpBitcast(ctx.F32[1], value) : value;
     }
-    if (IR::IsBarycentricCoord(attr) && ctx.profile.supports_fragment_shader_barycentric) {
+    if (IR::IsBarycentricCoord(attr) && attr != IR::Attribute::BaryCoordPullModel &&
+        ctx.profile.supports_fragment_shader_barycentric) {
         ++comp;
     }
     switch (attr) {
@@ -161,6 +157,27 @@ Id EmitGetAttribute(EmitContext& ctx, IR::Attribute attr, u32 comp, u32 index) {
         return ctx.OpLoad(
             ctx.F32[1],
             ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_nopersp_sample, ctx.ConstU32(comp)));
+    case IR::Attribute::BaryCoordPullModel: {
+        ASSERT_MSG(comp < 3, "Invalid BaryCoordPullModel component {}", comp);
+
+        if (ctx.profile.supports_amd_shader_explicit_vertex_parameter) {
+            return ctx.OpLoad(
+                ctx.F32[1],
+                ctx.OpAccessChain(ctx.input_f32, ctx.bary_coord_pull_model, ctx.ConstU32(comp)));
+        }
+
+        // FragCoord.w is reciprocal clip W at the fragment center. Perspective barycentrics
+        // are (I/W)/(1/W) and (J/W)/(1/W), so multiplying by FragCoord.w recovers the
+        // pull-model values expected by the guest.
+        const Id inv_w = ctx.OpLoad(
+            ctx.F32[1], ctx.OpAccessChain(ctx.input_f32, ctx.frag_coord, ctx.ConstU32(3U)));
+        if (comp == 2) {
+            return inv_w;
+        }
+        const Id ij =
+            ctx.OpCompositeExtract(ctx.F32[1], ctx.OpLoad(ctx.F32[3], ctx.bary_coord), comp + 1);
+        return ctx.OpFMul(ctx.F32[1], ij, inv_w);
+    }
     default:
         UNREACHABLE_MSG("Read attribute {}", attr);
     }

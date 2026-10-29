@@ -225,6 +225,7 @@ public:
     Id u16_zero_value{};
     Id u32_one_value{};
     Id u32_zero_value{};
+    Id f32_one_value{};
     Id f32_zero_value{};
     Id u64_one_value{};
     Id u64_zero_value{};
@@ -294,6 +295,7 @@ public:
     Id bary_coord_smooth{};
     Id bary_coord_smooth_centroid{};
     Id bary_coord_smooth_sample{};
+    Id bary_coord_pull_model{};
     Id bary_coord_nopersp{};
     Id bary_coord_nopersp_sample{};
 
